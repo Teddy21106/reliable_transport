@@ -79,21 +79,21 @@ def sender(receiver_ip, receiver_port, window_size):
             break
 
     base = 1
-    next_seq_num = 1
-    timer_start = None
+    next_seq = 1
+    start_time = None
 
     while base <= total_packets:
-        while next_seq_num < base + window_size and next_seq_num <= total_packets:
-            s.sendto(data_packets[next_seq_num - 1], dest_addr)
-            if timer_start is None:
-                timer_start = time.time()
-            next_seq_num += 1
+        while next_seq < base + window_size and next_seq <= total_packets:
+            s.sendto(data_packets[next_seq - 1], dest_addr)
+            if start_time is None:
+                start_time = time.time()
+            next_seq += 1
 
-        time_left = TIMEOUT_SEC - (time.time() - timer_start)
+        time_left = TIMEOUT_SEC - (time.time() - start_time)
         if time_left <= 0:
-            for seq in range(base, next_seq_num):
+            for seq in range(base, next_seq):
                 s.sendto(data_packets[seq - 1], dest_addr)
-            timer_start = time.time()
+            start_time = time.time()
             continue
 
         s.settimeout(time_left)
@@ -101,16 +101,16 @@ def sender(receiver_ip, receiver_port, window_size):
             raw_pkt, _ = s.recvfrom(2048)
             ack_seq = parse_and_verify_ack(raw_pkt)
 
-            if ack_seq is not None and base < ack_seq <= next_seq_num:
+            if ack_seq is not None and base < ack_seq <= next_seq:
                 base = ack_seq
-                if base < next_seq_num:
-                    timer_start = time.time()
+                if base < next_seq:
+                    start_time = time.time()
                 else:
-                    timer_start = None
+                    start_time = None
         except socket.timeout:
-            for seq in range(base, next_seq_num):
+            for seq in range(base, next_seq):
                 s.sendto(data_packets[seq - 1], dest_addr)
-            timer_start = time.time()
+            start_time = time.time()
 
     end_seq = total_packets + 1
     end_pkt = make_packet(TYPE_END, seq_num=end_seq)
