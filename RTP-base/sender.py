@@ -14,7 +14,6 @@ MAX_PAYLOAD = 1456
 TIMEOUT_SEC = 0.5       
 END_RETRY_SEC = 0.1     
 
-
 def make_packet(pkt_type, seq_num, payload=b""):
     header = PacketHeader(
         type=pkt_type,
@@ -45,7 +44,6 @@ def parse_and_verify_ack(raw_pkt):
 
 
 def sender(receiver_ip, receiver_port, window_size):
-    """TODO: Open socket and send message from sys.stdin."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest_addr = (receiver_ip, receiver_port)
 
@@ -116,17 +114,30 @@ def sender(receiver_ip, receiver_port, window_size):
 
     end_seq = total_packets + 1
     end_pkt = make_packet(TYPE_END, seq_num=end_seq)
-    s.sendto(end_pkt, dest_addr)
-    s.settimeout(TIMEOUT_SEC)
 
-    try:
-        while True:
-            ack_data, _ = s.recvfrom(2048)
-            ack_header = PacketHeader(ack_data[:16])
-            if ack_header.type == TYPE_ACK and ack_header.seq_num == end_seq + 1:
+    s.sendto(end_pkt, dest_addr)
+    end_deadline = time.time() + TIMEOUT_SEC
+    next_retry = time.time() + END_RETRY_SEC
+
+    while True:
+        now = time.time()
+        if now >= end_deadline:
+            break
+        
+        if now >= next_retry:
+            s.sendto(end_pkt, dest_addr)
+            next_retry = now + END_RETRY_SEC
+
+        wait_time = min(end_deadline, next_retry) - now
+        s.settimeout(max(0.001, wait_time))
+
+        try:
+            raw_pkt, _ = s.recvfrom(2048)
+            ack_seq = parse_and_verify_ack(raw_pkt)
+            if ack_seq == end_seq + 1:
                 break
-    except socket.timeout:
-        pass
+        except socket.timeout:
+            continue
 
     s.close()
 
